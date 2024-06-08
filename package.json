@@ -11,6 +11,13 @@
   "dependencies": {
     "command-line-args": "^5.2.1",
     "command-line-usage": "^7.0.1",
-    "osc-min": "^1.1.2"
+    "osc-min": "^1.1.2",
+    "table-layout": "^3.0.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.7",
+    "@babel/eslint-parser": "^7.24.7",
+    "eslint": "^9.4.0",
+    "eslint-plugin-unicorn": "^53.0.0"
   }
 }

@@ -4,7 +4,7 @@ Make your X32 talk to Vor
 
 ## Status
 
-___Non-working___.  The message processor is likely broken and incomplete, It'll get fixed when I am in the right building again and have a connection to a real X32 - the emulator won't cut it for that.
+___maybe working___.  Tested only with static fake data.
 
 ## Options
 
@@ -28,6 +28,7 @@ __-l__, __--listen__ _item1, item2, ..._
 
 * Updates to populate to Vor.
   * Options: [cue, dca1 - dca8, bus01 - bus16].
+  * Wildcard Options: [dca (all dca's), bus (all busses)]
   * Default is [cue, dca1 - dca8]
 
 __--updateFrequency__ _ms_
