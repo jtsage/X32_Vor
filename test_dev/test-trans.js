@@ -9,8 +9,10 @@
 
 // Test the OSC translator
 const x32              = require('../lib/x32_adapt.js')
-const {nodeLines}      = require('./fake_data.js')
 const CURRENT_STATE    = x32.getStateMap()
+
+
+const {nodeLines}      = require('./fake_data.js')
 
 for ( let i = 1; i < nodeLines.length; i++ ) {
 	const oscOperation = x32.processOSCMessage(nodeLines[i])

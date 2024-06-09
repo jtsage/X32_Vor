@@ -6,44 +6,47 @@ Make your X32 talk to Vor
 
 ___maybe working___.  Tested only with static fake data.
 
+## Synopsis
+
+```shell
+$ npm start [--verbose] x32_address
+$ npm start [--verbose] --listen cue dca bus --ip x32_address
+$ npm start --help
+```
+
+## X32 Configuration
+
+```plain
+--ip address      IP Address of the X32 [required]
+-p, --port port   Port of the X32 (10023)
+```
+
+## Vor Configuration
+
+```plain
+-l, --listen item ...   Updates to populate to Vor.
+                        Items: cue, dca, dca1 - dca8, bus, bus01 - bus16.
+                        Default is cue, dca
+--vorIP address         IP for Vor (127.0.0.1)
+-o, --vorPort port      Port for Vor (3333)
+--vorFreq ms            Vor update frequency in milliseconds (500ms)
+--vorJitter ms          Vor jitter frequency in milliseconds (50ms)
+```
+
 ## Options
 
-__--ip__ _address_
+```plain
+--help           Print this usage guide.
+-v, --verbose    Print lots of debug data
+-d, --debug      Print all incoming X32 OSC messages (implicit --noGUI)
+--noGUI          Suppress usual display
+```
 
-* IP Address of the X32 [required]
-
-__-p__, __--port__ _port_
-
-* Port of the X32 _[10023]_
-
-__-o__, __--vorPort__ _port_
-
-* Port for Vor _[3333]_
-
-__--vorIP__ _address_
-
-* IP for Vor _[127.0.0.1]_
-
-__-l__, __--listen__ _item1, item2, ..._
-
-* Updates to populate to Vor.
-  * Options: [cue, dca1 - dca8, bus01 - bus16].
-  * Wildcard Options: [dca (all dca's), bus (all busses)]
-  * Default is [cue, dca1 - dca8]
-
-__--updateFrequency__ _ms_
-
-* Updates frequency in ms _[1000ms]_
-
-__-v__, __--verbose__
-
-* Print lots of debug data
-
-## Install
+## Install (mac)
 
 ### Install Node.js
 
-1. create `~/.zprofile` if it does not already exist
+1. create `~/.zprofile` if it does not already exist (default mac shell is zsh - if you've changed it, you likely already have a .profile or .bashrc or whatever.)
 
 ```shell
 $ touch ~/.zprofile
@@ -62,9 +65,12 @@ $ nvm install 20
 ```
 
 4. Verify installation
+
 ```shell
-$ node -v # should print `v20.14.0`
-$ npm -v # should print `10.7.0`
+$ node -v 
+v20.14.0
+$ npm -v 
+10.7.0
 ```
 
 ### Clone or download the repository as a ZIP
@@ -104,6 +110,38 @@ Available:
 * /bus/__[bus number]__ _[level] [on/off] [name]_
 
 ___Note: Bus number must be zero-padded, e.g. `/bus/01`, not `/bus/1`___
+
+## Coverage
+
+This is a list with processed arguments of what OSC messages X32_Vor processes. Everything else is silently ignored.
+
+### Cues
+
+```plain
+/-show/prepos/current [i~current cue index]
+/-show/showfile/show (no args processed, when seen, clear internal cue list)
+/-show/showfile/cue/[cueIndex] [i~cueNumber] [s~cue Name] (others ignored)
+```
+
+### DCAs
+
+```plain
+/dca/[1-8] [s~ON/OFF] [s~level in dB]
+/dca/[1-8]/config [s~DCA Name] (others ignored)
+/dca/[1-8]/config/name [s~DCA Name]
+/dca/[1-8]/on [i~ON/OFF bool]
+/dca/[1-8]/fader [f~level in float]
+```
+
+### BUSes
+
+```plain
+/bus/[01-16]/mix [s~ON/OFF] [s~level in dB] (others ignored)
+/bus/[01-16]/mix/fader [f~level in float]
+/bus/[01-16]/mix/on [i~ON/OFF bool]
+/bus/[01-16]/config [s~DCA Name] (others ignored)
+/bus/[01-16]/config/name [s~DCA Name]
+```
 
 ## How about a binary?
 

@@ -12,21 +12,27 @@
 const dgram            = require('node:dgram')
 const commandLineArgs  = require('command-line-args')
 const commandLineUsage = require('command-line-usage')
-const Table            = require('table-layout')
 const x32              = require('./lib/x32_adapt.js')
+const {winLib}         = require('./lib/window_lib.js')
 
 /* eslint-disable sort-keys */
 const CLI_OPTIONS = [
 	{ name : 'ip',                           type : String,  defaultOption : true },
-	{ name : 'keepAlive',                    type : Number,  defaultValue : 5000 },
-	{ name : 'listen',          alias : 'l', type : String,  defaultValue : ['cue', 'dca'], multiple : true },
 	{ name : 'port',            alias : 'p', type : Number,  defaultValue : 10023 },
-	{ name : 'updateFrequency',              type : Number,  defaultValue : 1000 },
-	{ name : 'verbose',         alias : 'v', type : Boolean, defaultValue : false },
+	{ name : 'keepAlive',                    type : Number,  defaultValue : 5000 },
+
+	{ name : 'listen',          alias : 'l', type : String,  defaultValue : ['cue', 'dca'], multiple : true },
+
+	{ name : 'vorJitter',                    type : Number,  defaultValue : 0.05 },
+	{ name : 'vorFreq',                      type : Number,  defaultValue : 500 },
 	{ name : 'vorPort',         alias : 'o', type : Number,  defaultValue : 3333 },
 	{ name : 'vorIP',                        type : String,  defaultValue : '127.0.0.1' },
-	{ name : 'help',                         type : Boolean, defaultValue : false },
+
+	{ name : 'help',            alias : 'h', type : Boolean, defaultValue : false },
 	{ name : 'debug',           alias : 'd', type : Boolean, defaultValue : false },
+	{ name : 'verbose',         alias : 'v', type : Boolean, defaultValue : false },
+	{ name : 'noGUI',                        type : Boolean, defaultValue : false },
+	{ name : 'testData',                     type : Boolean, defaultValue : false },
 ]
 /* eslint-enable sort-keys */
 const CLI_HELP = [
@@ -35,49 +41,73 @@ const CLI_HELP = [
 		header  : 'X32/M32 Vor Adapter',
 	},
 	{
-		header     : 'Options',
+		content : [
+			'$ npm start [{bold --verbose}] {underline x32_address}',
+			'$ npm start [{bold --verbose}] {bold --listen} cue dca bus {bold --ip} {underline x32_address}',
+			'$ npm start {bold --help}'
+		],
+		header  : 'Synopsis',
+	},
+	{
+		header     : 'X32 Configuration',
 		optionList : [
 			{
 				defaultOption : true,
-				description   : 'IP Address of the X32 [required]',
+				description   : 'IP Address of the X32 {bold [required]}',
 				name          : 'ip',
 				type          : String,
 				typeLabel     : '{underline address}',
 			},
 			{
 				alias       : 'p',
-				description : 'Port of the X32 [10023]',
+				description : 'Port of the X32 {italic (10023)}',
 				name        : 'port',
 				type        : Number,
 				typeLabel   : '{underline port}',
 			},
-			{
-				alias       : 'o',
-				description : 'Port for Vor [3333]',
-				name        : 'vorPort',
-				type        : Number,
-				typeLabel   : '{underline port}',
-			},
-			{
-				description : 'IP for Vor [127.0.0.1]',
-				name        : 'vorIP',
-				type        : String,
-				typeLabel   : '{underline address}',
-			},
+		],
+	},
+	{
+		header     : 'Vor Configuration',
+		optionList : [
 			{
 				alias       : 'l',
-				description : 'Updates to populate to Vor. Options: [cue, dca, dca1 - dca8, bus, bus01 - bus16]. Default is [cue, dca (all)]',
+				description : 'Updates to populate to Vor.\nItems: {italic cue, dca, dca1 - dca8, bus, bus01 - bus16}.\nDefault is {italic cue, dca}',
 				multiple    : true,
 				name        : 'listen',
 				type        : String,
 				typeLabel   : '{underline item} ...',
 			},
 			{
-				description : 'Updates frequency in ms [1000ms]',
-				name        : 'updateFrequency',
+				description : 'IP for Vor {italic (127.0.0.1)}',
+				name        : 'vorIP',
+				type        : String,
+				typeLabel   : '{underline address}',
+			},
+			{
+				alias       : 'o',
+				description : 'Port for Vor {italic (3333)}',
+				name        : 'vorPort',
+				type        : Number,
+				typeLabel   : '{underline port}',
+			},
+			{
+				description : 'Vor update frequency in milliseconds {italic (500ms)}',
+				name        : 'vorFreq',
 				type        : Number,
 				typeLabel   : '{underline ms}',
 			},
+			{
+				description : 'Vor jitter frequency in milliseconds {italic (50ms)}',
+				name        : 'vorJitter',
+				type        : Number,
+				typeLabel   : '{underline ms}',
+			},
+		],
+	},
+	{
+		header     : 'Options',
+		optionList : [
 			{
 				description : 'Print this usage guide.',
 				name        : 'help',
@@ -91,8 +121,13 @@ const CLI_HELP = [
 			},
 			{
 				alias       : 'd',
-				description : 'Print all incoming (X32) osc messages',
+				description : 'Print all incoming X32 OSC messages (implies {bold --noGUI})',
 				name        : 'debug',
+				type        : Boolean,
+			},
+			{
+				description : 'Suppress usual display',
+				name        : 'noGUI',
 				type        : Boolean,
 			},
 		],
@@ -106,12 +141,16 @@ if ( options.help ) {
 	console.log(usage)
 	process.exit(0)
 }
+if ( options.debug ) {
+	options.noGUI = true
+}
 if ( !options.ip ) {
 	console.log('ERROR :: IP Address of X32 Required')
 	console.log(usage)
 	process.exit(1)
 }
-options.listen = [...new Set(options.listen)]
+
+options.listen = [...new Set(options.listen)] // remove duplicates
 if ( options.listen.includes('dca') ) {
 	options.listen.splice(options.listen.indexOf('dca'), 1)
 	options.listen.push('dca1', 'dca2', 'dca3', 'dca4', 'dca5', 'dca6', 'dca7', 'dca8')
@@ -120,43 +159,74 @@ if ( options.listen.includes('bus') ) {
 	options.listen.splice(options.listen.indexOf('bus'), 1)
 	options.listen.push('bus01', 'bus02', 'bus03', 'bus04', 'bus05', 'bus06', 'bus07', 'bus08', 'bus09', 'bus10', 'bus11', 'bus12', 'bus13', 'bus14', 'bus15', 'bus16')
 }
-options.listen = [...new Set(options.listen)]
-if ( options.verbose ) {
-	console.log('Current Options:')
-	console.log(options)
-	setInterval(printState, 2500)
-}
+options.listen = [...new Set(options.listen)] // remove duplicates, again
 
+for ( const thisListenItem of options.listen ) {
+	if ( ! [
+		'cue', 'dca1', 'dca2', 'dca3', 'dca4',
+		'dca5', 'dca6', 'dca7', 'dca8', 'bus01',
+		'bus02', 'bus03', 'bus04', 'bus05', 'bus06',
+		'bus07', 'bus08', 'bus09', 'bus10', 'bus11',
+		'bus12', 'bus13', 'bus14', 'bus15', 'bus16'
+	].includes(thisListenItem) ) {
+		console.log(`ERROR :: Invalid Listener Specified :: ${thisListenItem}`)
+		console.log(usage)
+		process.exit(1)
+	}
+}
 
 const CURRENT_STATE = x32.getStateMap()
 const START_MAP     = x32.getNameMap()
+const thisWindow    = new winLib(CURRENT_STATE)
+
+if ( ! options.noGUI ) {
+	thisWindow.doSetupAndClear()
+	thisWindow.paint()
+
+	setInterval(() => { thisWindow.paint() }, 1000)
+	// process.on('SIGWINCH', () => {this.doSetupAndClear()})
+}
+
 
 const x32Socket = dgram.createSocket({type : 'udp4', reuseAddr : true})
 const vorSocket = dgram.createSocket({type : 'udp4', reuseAddr : true})
 
 x32Socket.on('message', processFromX32)
 x32Socket.on('error', (err) => {
-	console.log(`x32 listener error:\n${err.stack}`)
+	printInfo(`x32 listener error:\n${err.stack}`, true)
 	x32Socket.close()
 })
 x32Socket.on('listening', () => {
 	const address = x32Socket.address()
-	console.log(`listening to X32 on ${address.address}:${address.port}`)
+	printInfo(`listening to X32 on ${address.address}:${address.port}`, true)
 })
 x32Socket.bind(options.port)
 
+if ( options.testData ) {
+	const {nodeLines} = require('./test_dev/fake_data.js')
+
+	for ( let i = 1; i < nodeLines.length; i++ ) {
+		const oscOperation = x32.processOSCMessage(nodeLines[i])
+		try {
+			processOSCOperation(oscOperation)
+		} catch (err) {
+			console.error(`Bad OSC Handling :: ${err}`)
+		}
+	}
+}
+
 getInitialData()
 
+// Keeps the /xremote command alive every keepAlive
 setInterval(() => {
-	// Keeps the /xremote command alive
 	sendToX32(x32.xRemote)
-	if ( options.verbose ) { console.log('pinging x32...')}
+	if ( options.verbose || !options.noGUI ) { printInfo('pinging x32...')}
 }, options.keepAlive)
 
+// Refreshes the cue list every keepAlive x 10
 setInterval(() => {
-	// Refreshes the cue list
 	sendToX32(x32.showData)
-	if ( options.verbose ) { console.log('pinging x32 show data...')}
+	if ( options.verbose || !options.noGUI ) { printInfo('pinging x32 show data...')}
 }, options.keepAlive * 10 )
 
 // Update VOR
@@ -182,51 +252,37 @@ function getInitialData() {
 
 // Send an update to VOR
 function updateVor() {
+	const updateBundle = {
+		elements : [],
+		timetag  : x32.now() + options.vorJitter/1000, // Offset for transit time
+	}
+
 	for ( const thisItem of options.listen ) {
-		switch (thisItem) {
-			case 'cue' :
-				sendToVor(x32.oscMessage('/currentCue', CURRENT_STATE.cue_list?.[CURRENT_STATE.current_cue]?.[0] ?? '0.0.0', CURRENT_STATE.cue_list?.[CURRENT_STATE.current_cue]?.[1] ?? ''))
-				break
-			case 'dca1' :
-			case 'dca2' :
-			case 'dca3' :
-			case 'dca4' :
-			case 'dca5' :
-			case 'dca6' :
-			case 'dca7' :
-			case 'dca8' : {
-				const dcaNumber = thisItem.substring(thisItem.length - 1)
-				const dcaState  = CURRENT_STATE.dca[dcaNumber]
-				const dcaName   = dcaState[2] === '' ? thisItem.toUpperCase() : dcaState[2]
-				sendToVor(x32.oscMessage(`/dca/${dcaNumber}`, dcaState[0], dcaState[1], dcaName))
-				break
-			}
-			case 'bus01' :
-			case 'bus02' :
-			case 'bus03' :
-			case 'bus04' :
-			case 'bus05' :
-			case 'bus06' :
-			case 'bus07' :
-			case 'bus08' :
-			case 'bus09' :
-			case 'bus10' :
-			case 'bus11' :
-			case 'bus12' :
-			case 'bus13' :
-			case 'bus14' :
-			case 'bus15' :
-			case 'bus16' : {
-				const busNumber = thisItem.substring(thisItem.length - 2)
-				const busState  = CURRENT_STATE.bus[parseInt(busNumber, 10)]
-				const busName   = busState[2] === '' ? thisItem.toUpperCase() : busState[2]
-				sendToVor(x32.oscMessage(`/bus/${busNumber}`, busState[0], busState[1], busName))
-				break
-			}
-			default :
-				console.log('NOTE: invalid listener specified at run!', thisItem)
+		if ( thisItem === 'cue' ) {
+			updateBundle.elements.push(x32.oscObject(
+				'/currentCue',
+				CURRENT_STATE.cue_list?.[CURRENT_STATE.current_cue]?.[0] ?? '0.0.0',
+				CURRENT_STATE.cue_list?.[CURRENT_STATE.current_cue]?.[1] ?? ''
+			))
+		} else if ( thisItem.startsWith('dca') ) {
+			const dcaNumber = parseInt(thisItem.substring(thisItem.length - 1), 10)
+			const dcaState  = CURRENT_STATE.dca[dcaNumber]
+			const dcaName   = dcaState[2] === '' ? thisItem.toUpperCase() : dcaState[2]
+			updateBundle.elements.push(x32.oscObject(
+				`/dca/${dcaNumber}`, dcaState[0], dcaState[1], dcaName
+			))
+		} else if ( thisItem.startsWith('bus') ) {
+			const busNumber  = thisItem.substring(thisItem.length - 2)
+			const busNumberI = parseInt(busNumber, 10)
+			const busState  = CURRENT_STATE.bus[busNumberI]
+			const busName   = busState[2] === '' ? thisItem.toUpperCase() : busState[2]
+			updateBundle.elements.push(x32.oscObject(
+				`/bus/${busNumber}`, busState[0], busState[1], busName
+			))
 		}
 	}
+
+	sendToVor(x32.toOSCBuffer(updateBundle))
 }
 
 // Send a packet to the X32
@@ -236,6 +292,7 @@ function sendToX32(data) {
 
 // Send a packet to VOR
 function sendToVor(data) {
+	CURRENT_STATE.last_size = data.length
 	vorSocket.send(data, 0, data.length, options.vorPort, options.vorIP)
 }
 
@@ -250,15 +307,13 @@ function processFromX32(msg, _rinfo) {
 			try {
 				processOSCOperation(oscOperation)
 			} catch (err) {
-				console.log(`bad OSC handling ${options.verbose ? ` :: ${err}` : '' }`)
+				printInfo(`bad OSC handling :: ${err}`)
 			}
 		} catch (err) {
-			console.log(`bad OSC decode ${options.verbose ? ` :: ${err}` : '' }`)
-			if ( options.verbose ) { console.log(oscMessage) }
+			printInfo(`bad OSC decode :: ${err}`)
 		}
 	} catch (err) {
-		console.log(`invalid OSC packet ${options.verbose ? ` :: ${err}` : '' }`)
-		if ( options.verbose ) { console.log(msg) }
+		printInfo(`invalid OSC packet :: ${err}`)
 	}
 }
 
@@ -330,41 +385,15 @@ function processOSCOperation (oscOperation) {
 		const cueName = oscOperation.args[1].replace(/^"|"$/g, '')
 		CURRENT_STATE.cue_list[oscOperation.endpoint.cueNum] = [cueNum, cueName]
 	} else {
-		console.log('TODO:', oscOperation.endpoint.type)
+		printInfo('TODO:', oscOperation.endpoint.type)
 	}
 }
 
 
-function printState() {
-	const lineBreak = '-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n'
-	process.stdout.write(lineBreak)
-	process.stdout.write(`Adapter Current State : ${new Date().toLocaleString()}\n`)
-	process.stdout.write(lineBreak)
-	process.stdout.write(`Cue List [ current : ${CURRENT_STATE.current_cue} ]\n`)
-	process.stdout.write(new Table(CURRENT_STATE.cue_list, { maxWidth : 79 }).toString())
-	
-	const dcaList = [[], [], [], []]
-	for ( let i = 1; i <= 4; i++ ) {
-		dcaList[0].push(`[${i}] ${CURRENT_STATE.dca[i][2]}`)
-		dcaList[1].push(`  ${CURRENT_STATE.dca[i][1]} : ${CURRENT_STATE.dca[i][0]}`)
-		dcaList[2].push(`[${i+4}]  ${CURRENT_STATE.dca[i+4][2]}`)
-		dcaList[3].push(`  ${CURRENT_STATE.dca[i+4][1]} : ${CURRENT_STATE.dca[i+4][0]}`)
+function printInfo(text, skipVerbose = false) {
+	if ( options.noGUI && (options.verbose || skipVerbose) ) {
+		console.log(text)
+	} else {
+		x32.addMsg(text.toString(), CURRENT_STATE)
 	}
-	process.stdout.write(lineBreak)
-	process.stdout.write(new Table(dcaList, { maxWidth : 80, padding : { left : '| ', right : ' |'}}).toString())
-
-	const busList = [[], [], [], [], [], [], [], []]
-	for ( let i = 1; i <= 4; i++ ) {
-		busList[0].push(`[${i}] ${CURRENT_STATE.bus[i][2]}`)
-		busList[1].push(`  ${CURRENT_STATE.bus[i][1]} : ${CURRENT_STATE.bus[i][0]}`)
-		busList[2].push(`[${i+4}]  ${CURRENT_STATE.bus[i+4][2]}`)
-		busList[3].push(`  ${CURRENT_STATE.bus[i+4][1]} : ${CURRENT_STATE.bus[i+4][0]}`)
-		busList[4].push(`[${i+8}]  ${CURRENT_STATE.bus[i+8][2]}`)
-		busList[5].push(`  ${CURRENT_STATE.bus[i+8][1]} : ${CURRENT_STATE.bus[i+8][0]}`)
-		busList[6].push(`[${i+12}]  ${CURRENT_STATE.bus[i+12][2]}`)
-		busList[7].push(`  ${CURRENT_STATE.bus[i+12][1]} : ${CURRENT_STATE.bus[i+12][0]}`)
-	}
-	process.stdout.write(lineBreak)
-	process.stdout.write(new Table(busList, { maxWidth : 80, padding : { left : '| ', right : ' |'}}).toString())
-	process.stdout.write(lineBreak)
 }

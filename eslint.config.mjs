@@ -104,7 +104,7 @@ export default [
 			'require-atomic-updates'          : 'error',
 			'semi'                            : ['error', 'never'],
 	
-			'complexity'                      : ['warn', 35],
+			'complexity'                      : ['warn', 25],
 			'sort-keys'                       : ['warn', 'asc', {'allowLineSeparatedGroups' : true, 'caseSensitive' : false, 'minKeys' : 4, 'natural' : true}],
 	
 			'unicorn/better-regex'                     : 'error',
