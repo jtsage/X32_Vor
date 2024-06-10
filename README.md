@@ -53,6 +53,16 @@ $ npm start --help
 --noGUI          Suppress usual display
 ```
 
+## Packet Size and Jitter
+
+Because OSC uses UDP with all of the technical considerations and limits that implies, it is important to set your __--listen__ directive with the minimum you need.
+
+__The maximum safe UDP payload is 508 bytes.__ This is a packet size of 576 (the "minimum maximum reassembly buffer size"), minus the maximum 60-byte IP header and the 8-byte UDP header.
+
+If your packet size exceeds the maximum above, it will be fragmented - on a local network, this is probably still fine (including local loopback), but if one fragment fails to deliver, the entire packet is dropped.  Because X32Vor transmits the entire state each send window, in practice, this is probably fine - but if you notice a lot of stutter in the data, try reducing the amount of measurements you are listening to.
+
+Likewise, it takes some amount of time for the UDP packet to arrive - and each packet is timestamped 50ms in the future (by default) - if it arrives after this time, it will be ignored (configurable in VOR).  If your stream jitters, you can try increasing this time offset.
+
 ## Install (mac)
 
 ### Install Node.js
@@ -122,6 +132,7 @@ Available:
 
 ___Note: Bus number must be zero-padded, e.g. `/bus/01`, not `/bus/1`___
 
+
 ## Coverage
 
 This is a list with processed arguments of what OSC messages X32_Vor processes. Everything else is silently ignored. Some of these are `node` messages - the real message is in the first string argument of the `node` address - not the lack of preceding slash
@@ -153,6 +164,41 @@ This is a list with processed arguments of what OSC messages X32_Vor processes. 
 /bus/[01-16]/mix/on [i~ON/OFF bool]
 /bus/[01-16]/config [s~DCA Name] (others ignored)
 /bus/[01-16]/config/name [s~DCA Name]
+```
+
+## Actual workflow
+
+Pseudo-code follows, for anyone looking to do something simlar for the X32/M32 series
+
+### Boilerplate
+
+```js
+function sendToX32(oscAddress, parameter1, parameter2, ...) { /* ... */ }
+```
+
+### Startup
+```js
+sendToX32('/node', '-prefs/show_control'))
+sendToX32('/node', '-show/prepos/current')
+sendToX32('/node', 'dca/[1-8]')
+sendToX32('/node', 'dca/[1-8]/config')
+sendToX32('/node', 'bus/[01-16]')
+sendToX32('/node', 'bus/[01-16]/config')
+sendToX32('/showdata')
+sendToX32('/xremote')
+```
+
+### Repeat every keepAlive (5000ms)
+```js
+sendToX32('/xremote')
+```
+
+### Repeat every keepAlive * 10 (50,000ms)
+
+Or, when an event is received where we thing the cue list has changed - this includes cue/scene/snippet save/delete/edit
+
+```js
+sendToX32('/showdata')
 ```
 
 ## How about a binary?
