@@ -4,7 +4,18 @@ Make your X32 talk to Vor
 
 ## Status
 
-___maybe working___.  Tested only with static fake data.
+___working___ In testings.  My test rig has a wired ethernet to the X32, and VOR is on the same machine.
+
+## Overview
+
+### Terminal View
+
+![term](./doc/sample_term.png)
+
+### Vor View
+
+![vor](./doc/sample_vor.png)
+_World's cheapest webcam, sorry_
 
 ## Synopsis
 
