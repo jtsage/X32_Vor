@@ -53,6 +53,10 @@ $ npm start --help
 --noGUI          Suppress usual display
 ```
 
+## Cues, Scenes or Snippets
+
+X32_Vor will load the "cue list" with whatever the show_control setting on the X32 is.
+
 ## Packet Size and Jitter
 
 Because OSC uses UDP with all of the technical considerations and limits that implies, it is important to set your __--listen__ directive with the minimum you need.
