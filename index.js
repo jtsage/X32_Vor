@@ -210,7 +210,7 @@ if ( options.testData ) {
 		try {
 			processOSCOperation(oscOperation)
 		} catch (err) {
-			console.error(`Bad OSC Handling :: ${err}`)
+			printInfo(`Bad OSC Handling :: ${err}`)
 		}
 	}
 }
@@ -239,6 +239,7 @@ Worker Functions
 
 // Get initial data from X32 (otherwise no update until change)
 function getInitialData() {
+	
 	for ( const thisItem of VALID_LISTEN ) {
 		if ( Object.hasOwn(START_MAP, thisItem) ) {
 			for ( const oscMsg of START_MAP[thisItem] ) {
@@ -246,6 +247,7 @@ function getInitialData() {
 			}
 		}
 	}
+	sendToX32(x32.oscMessage('/node', '-prefs/show_control'))
 	sendToX32(x32.showData)
 	sendToX32(x32.xRemote)
 }
@@ -306,10 +308,10 @@ function processFromX32(msg, _rinfo) {
 			try {
 				processOSCOperation(oscOperation)
 			} catch (err) {
-				printInfo(`bad OSC handling :: ${err}`)
+				printInfo(`bad OSC handling :: ${oscMessage} :: ${err}`)
 			}
 		} catch (err) {
-			printInfo(`bad OSC decode :: ${err}`)
+			printInfo(`bad OSC decode :: ${oscMessage} :: ${err}`)
 		}
 	} catch (err) {
 		printInfo(`invalid OSC packet :: ${err}`)
@@ -322,12 +324,22 @@ function processOSCOperation (oscOperation) {
 	if ( oscOperation.endpoint.type === 'cueListDirty' ) {
 		sendToX32(x32.showData)
 	} else if ( oscOperation.endpoint.type === 'rebuildCueList' ) {
+		printInfo('clearing cue data...')
 		CURRENT_STATE.cue_list = []
 	} else if ( oscOperation.args === null ) {
 		// payload-less real operation - this shouldn't happen in production, ever.
 		return
+	} else if ( oscOperation.endpoint.type === 'mode' ) {
+		printInfo('setting new cue mode...')
+		sendToX32(x32.showData)
+		if ( typeof oscOperation.args[0] === 'number' ) {
+			CURRENT_STATE.mode = ['cue', 'scene', 'snippet'][oscOperation.args[0]]
+		} else {
+			CURRENT_STATE.mode = oscOperation.args[0].toLowerCase().slice(0, -1)
+		}
 	} else if ( oscOperation.endpoint.type === 'currentCue' ) {
 		CURRENT_STATE.current_cue = parseInt(oscOperation.args[0], 10)
+		printInfo(`setting current cue... ${oscOperation.args[0]}`)
 	} else if ( oscOperation.endpoint.type === 'dca' ) {
 		const faderIdx = oscOperation.endpoint.faderNumI
 		switch ( oscOperation.endpoint.operation ) {
@@ -376,15 +388,22 @@ function processOSCOperation (oscOperation) {
 			default :
 				break
 		}
-	} else if ( oscOperation.endpoint.type === 'cue' ) {
-		const cueParts = [...oscOperation.args[0]]
-		let cueNum = cueParts.pop()
-		cueNum = `${cueParts.pop()}.${cueNum}`
-		cueNum = `${cueParts.join('')}.${cueNum}`
-		const cueName = oscOperation.args[1].replace(/^"|"$/g, '')
-		CURRENT_STATE.cue_list[oscOperation.endpoint.cueNum] = [cueNum, cueName]
-	} else {
-		printInfo('TODO:', oscOperation.endpoint.type)
+	} else if ( oscOperation.endpoint.type === 'cue' && oscOperation.endpoint.subtype === CURRENT_STATE.mode ) {
+		if ( oscOperation.endpoint.subtype === 'cue' ) {
+			const cueParts = [...oscOperation.args[0]]
+			let cueNum = cueParts.pop()
+			cueNum = `${cueParts.pop()}.${cueNum}`
+			cueNum = `${cueParts.join('')}.${cueNum}`
+			const cueName = oscOperation.args[1].replace(/^"|"$/g, '')
+			CURRENT_STATE.cue_list[oscOperation.endpoint.cueNum] = [cueNum, cueName]
+			printInfo(`adding ${CURRENT_STATE.mode} ${cueNum} :: ${cueName}`)
+		} else {
+			const cueName = oscOperation.args[0].replace(/^"|"$/g, '')
+			CURRENT_STATE.cue_list[oscOperation.endpoint.cueNum] = [oscOperation.endpoint.cueNum, cueName]
+			printInfo(`adding ${CURRENT_STATE.mode} ${cueName}`)
+		}
+	} else if ( oscOperation.endpoint.type !== 'cue' ) {
+		printInfo(`MISSED :: ${oscOperation.endpoint.type}`)
 	}
 }
 

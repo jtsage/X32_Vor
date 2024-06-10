@@ -113,11 +113,12 @@ ___Note: Bus number must be zero-padded, e.g. `/bus/01`, not `/bus/1`___
 
 ## Coverage
 
-This is a list with processed arguments of what OSC messages X32_Vor processes. Everything else is silently ignored.
+This is a list with processed arguments of what OSC messages X32_Vor processes. Everything else is silently ignored. Some of these are `node` messages - the real message is in the first string argument of the `node` address - not the lack of preceding slash
 
 ### Cues
 
 ```plain
+/-prefs/show_control [i~index of](!OR!)[s~CUES,SCENES,SNIPPETS] (all referred to as cues by X32Vor)
 /-show/prepos/current [i~current cue index]
 /-show/showfile/show (no args processed, when seen, clear internal cue list)
 /-show/showfile/cue/[cueIndex] [i~cueNumber] [s~cue Name] (others ignored)
