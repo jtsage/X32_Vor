@@ -133,6 +133,13 @@ const CLI_HELP = [
 		],
 	}
 ]
+const VALID_LISTEN = [
+	'cue', 'dca1', 'dca2', 'dca3', 'dca4',
+	'dca5', 'dca6', 'dca7', 'dca8', 'bus01',
+	'bus02', 'bus03', 'bus04', 'bus05', 'bus06',
+	'bus07', 'bus08', 'bus09', 'bus10', 'bus11',
+	'bus12', 'bus13', 'bus14', 'bus15', 'bus16'
+]
 
 const options = commandLineArgs(CLI_OPTIONS)
 const usage   = commandLineUsage(CLI_HELP)
@@ -162,13 +169,7 @@ if ( options.listen.includes('bus') ) {
 options.listen = [...new Set(options.listen)] // remove duplicates, again
 
 for ( const thisListenItem of options.listen ) {
-	if ( ! [
-		'cue', 'dca1', 'dca2', 'dca3', 'dca4',
-		'dca5', 'dca6', 'dca7', 'dca8', 'bus01',
-		'bus02', 'bus03', 'bus04', 'bus05', 'bus06',
-		'bus07', 'bus08', 'bus09', 'bus10', 'bus11',
-		'bus12', 'bus13', 'bus14', 'bus15', 'bus16'
-	].includes(thisListenItem) ) {
+	if ( ! VALID_LISTEN.includes(thisListenItem) ) {
 		console.log(`ERROR :: Invalid Listener Specified :: ${thisListenItem}`)
 		console.log(usage)
 		process.exit(1)
@@ -186,7 +187,6 @@ if ( ! options.noGUI ) {
 	setInterval(() => { thisWindow.paint() }, 1000)
 	// process.on('SIGWINCH', () => {this.doSetupAndClear()})
 }
-
 
 const x32Socket = dgram.createSocket({type : 'udp4', reuseAddr : true})
 const vorSocket = dgram.createSocket({type : 'udp4', reuseAddr : true})
@@ -239,7 +239,7 @@ Worker Functions
 
 // Get initial data from X32 (otherwise no update until change)
 function getInitialData() {
-	for ( const thisItem of options.listen ) {
+	for ( const thisItem of VALID_LISTEN ) {
 		if ( Object.hasOwn(START_MAP, thisItem) ) {
 			for ( const oscMsg of START_MAP[thisItem] ) {
 				sendToX32(oscMsg)
@@ -303,7 +303,6 @@ function processFromX32(msg, _rinfo) {
 		if ( options.debug ) { console.log('From X32 :: ', oscMessage) }
 		try {
 			const oscOperation = x32.processOSCMessage(oscMessage)
-
 			try {
 				processOSCOperation(oscOperation)
 			} catch (err) {
