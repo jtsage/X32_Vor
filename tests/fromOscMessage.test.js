@@ -1,48 +1,10 @@
 // const oscMain = require('../lib/osc-min.js')
 const osc  = require('../lib/osc-utilities.js')
 
-
-
-test('toOscString (padding \'a\' -> 4)', () => {
-	expect(osc.toOscString('a').length).toBe(4)
-})
-test('toOscString (padding \'bb\' -> 4)', () => {
-	expect(osc.toOscString('bb').length).toBe(4)
-})
-test('toOscString (padding \'ccc\' -> 4)', () => {
-	expect(osc.toOscString('ccc').length).toBe(4)
-})
-test('toOscString (padding \'dddd\' -> 8)', () => {
-	expect(osc.toOscString('dddd').length).toBe(8)
+test('toIntegerBuffer throws when passed a non-number', () => {
+	expect(() => osc.toIntegerBuffer('abcdefg')).toThrow(Error)
 })
 
-
-test('non strings fail toOscString', () => {
-	expect(() => osc.toOscString(7)).toThrow(Error)
-})
-test('strings with null characters don\'t fail toOscString by default', () => {
-	expect(osc.toOscString('\u0000')).toBeDefined()
-})
-test('strings with null characters fail toOscString in strict mode', () => {
-	expect(() => {return osc.toOscString('\u0000hi', true)}).toThrow(Error)
-})
-
-const testRoundTrip = (input) => {
-	const oscString = osc.toOscString(input)
-	return osc.splitOscString(oscString).string
-}
-
-test('round trip simple string "hello world"', () => {
-	expect(testRoundTrip('hello world')).toEqual('hello world')
-})
-
-test('osc buffers with no null characters fail splitOscString in strict mode', () => {
-	expect(() => osc.splitOscString(Buffer.from('abc'), true)).toThrow(Error)
-})
-
-test('splitOscString throws when passed a non-buffer', () => {
-	expect(() => { osc.splitOscString('test', true) }).toThrow(Error)
-})
 
 test('fromOscMessage with no type string works', () => {
 	const expected = { address : '/stuff', args : [] }
@@ -64,15 +26,13 @@ test('fromOscMessage with type string and no args works', () => {
 })
 
 
-
-
-const testDecode = (addr, type, arg = null) => {
+const testDecode = (addr, type, arg = null, strict = false) => {
 	const oscAddr = osc.toOscString(addr)
 	const oscType = osc.toOscString(type)
 	return osc.fromOscMessage( (arg === null ) ?
 		osc.concatBuffers([oscAddr, oscType]) :
 		osc.concatBuffers([oscAddr, oscType, arg])
-	)
+	, strict)
 }
 
 test('fromOscMessage with string argument works', () => {
@@ -126,9 +86,6 @@ test('fromOscMessage with integer argument works', () => {
 	expect(testDecode('/stuff', ',i', osc.toIntegerBuffer(69))).toEqual(expected)
 })
 
-test('toIntegerBuffer throws when passed a non-number', () => {
-	expect(() => osc.toIntegerBuffer('abcdefg')).toThrow(Error)
-})
 
 test('fromOscMessage with integer argument works', () => {
 	const expected = {
@@ -157,43 +114,96 @@ test('fromOscMessage with timetag argument works', () => {
 	expect(testDecode('/stuff', ',t', osc.toTimetagBuffer([8888, 9999]))).toEqual(expected)
 })
 
-
-test('splitOscString works with an over-allocated buffer', () => {
+test('fromOscMessage with mismatched array doesn\'t throw', () => {
 	const expected = {
-		string : 'testing it',
-		rest : expect.any(Buffer),
+		address : '/stuff',
+		args : [],
+		oscType : 'message',
 	}
 
-	const actualBuffer = osc.toOscString('testing it')
-	const overBuffer   = Buffer.alloc(16)
-	actualBuffer.copy(overBuffer)
-	expect(osc.splitOscString(overBuffer)).toEqual(expected)
+	const oscAddr = osc.toOscString('/stuff')
+
+	expect(osc.fromOscMessage(osc.concatBuffers([oscAddr, osc.toOscString(',[')]))).toEqual(expected)
+	expect(osc.fromOscMessage(osc.concatBuffers([oscAddr, osc.toOscString(',]')]))).toEqual(expected)
 })
 
-test('splitOscString works with just a string by default', () => {
+test('fromOscMessage with mismatched array throws in strict', () => {
+	const oscAddr = osc.toOscString('/stuff')
+
+	expect(() => osc.fromOscMessage(osc.concatBuffers([oscAddr, osc.toOscString(',[')]), true)).toThrow(Error)
+	expect(() => osc.fromOscMessage(osc.concatBuffers([oscAddr, osc.toOscString(',]')]), true)).toThrow(Error)
+})
+
+
+
+
+test('fromOscMessage with empty array argument works', () => {
 	const expected = {
-		string : 'testing it',
-		rest : expect.any(Buffer),
+		address : '/stuff',
+		args : [{ type : 'array', value : [] }],
+		oscType : 'message',
 	}
-	expect(osc.splitOscString(Buffer.from('testing it'))).toEqual(expected)
+	expect(testDecode('/stuff', ',[]')).toEqual(expected)
 })
 
-test('splitOscString strict fails for just a string', () => {
-	expect(() => osc.splitOscString(Buffer.from('testing it'), true)).toThrow(Error)
-})
-
-test('splitOscString strict fails for string with not enough padding', () => {
-	expect(() => osc.splitOscString(Buffer.from('testing \u0000\u0000'), true)).toThrow(Error)
-})
-
-test('splitOscString strict succeeds for strings with valid padding', () => {
+test('fromOscMessage with bang array argument works', () => {
 	const expected = {
-		string : 'testing it',
-		rest : expect.any(Buffer),
+		address : '/stuff',
+		args : [{ type : 'array', value : [{ type : 'bang', value : 'bang' }] }],
+		oscType : 'message',
 	}
-	expect(osc.splitOscString(Buffer.from('testing it\u0000\u0000aaaa'), true)).toEqual(expected)
+	expect(testDecode('/stuff', ',[I]')).toEqual(expected)
 })
 
-test('splitOscString strict fails for string with invalid padding', () => {
-	expect(() => osc.splitOscString(Buffer.from('testing it\u0000aaaaa'), true)).toThrow(Error)
+test('fromOscMessage with string array argument works', () => {
+	const expected = {
+		address : '/stuff',
+		args : [{ type : 'array', value : [{ type : 'string', value : 'argument' }] }],
+		oscType : 'message',
+	}
+	expect(testDecode('/stuff', ',[s]', osc.toOscString('argument'))).toEqual(expected)
+})
+
+test('fromOscMessage with nested array argument works', () => {
+	const expected = {
+		address : '/stuff',
+		args : [{ type : 'array', value : [{ type : 'array', value : [{ type : 'bang', value : 'bang' }] }] }],
+		oscType : 'message',
+	}
+	expect(testDecode('/stuff', ',[[I]]', osc.toOscString('argument'))).toEqual(expected)
+})
+
+test('fromOscMessage with multiple args works', () => {
+	const expected = {
+		address : '/stuff',
+		args : [
+			{ type : 'string', value : 'string1' },
+			{ type : 'string', value : 'string2' },
+			{ type : 'integer', value : 69 },
+		],
+		oscType : 'message',
+	}
+	const args = [
+		osc.toOscString('string1'),
+		osc.toOscString('string2'),
+		osc.toIntegerBuffer(69)
+	]
+	expect(testDecode('/stuff', ',ssi', osc.concatBuffers(args))).toEqual(expected)
+})
+
+
+test('fromOscMessage strict fails if type string has no comma', () => {
+	expect(() => testDecode('/stuff', 'fake', null, true)).toThrow(Error)
+})
+
+test('fromOscMessage non-strict works if type string has no comma', () => {
+	const expected = {
+		address : '/stuff',
+		args : [],
+	}
+	expect(testDecode('/stuff', 'fake', null, false)).toEqual(expected)
+})
+
+test('fromOscMessage strict fails if address doesn\'t begin with /', () => {
+	expect(() => testDecode('stuff', ',', null, true)).toThrow(Error)
 })
