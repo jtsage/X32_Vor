@@ -4,17 +4,15 @@
   "description": "X32 Vor Interface",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "jest"
+    "start": "node index.js"
   },
-  "author": "",
+  "author": "J.T.Sage",
   "license": "ISC",
   "dependencies": {
     "ansi": "^0.3.1",
-    "binpack": "^0.1.0",
     "command-line-args": "^5.2.1",
     "command-line-usage": "^7.0.1",
-    "osc-min": "^1.1.2"
+    "simple-osc-lib": "github:jtsage/node-simple-osc-lib"
   },
   "devDependencies": {
     "@babel/core": "^7.24.7",
@@ -22,10 +20,6 @@
     "esbuild": "0.21.5",
     "eslint": "^9.4.0",
     "eslint-plugin-unicorn": "^53.0.0",
-    "jest": "^29.7.0"
-  },
-  "jest": {
-    "verbose": true,
-    "errorOnDeprecated" : true
+    "globals": "^15.4.0"
   }
 }
