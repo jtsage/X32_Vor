@@ -207,7 +207,7 @@ sendToX32('/showdata')
 
 ## How about a binary?
 
-Maybe. I don't have the foggiest idea on the state of Node.js build tools for CLI stuff.
+Sure.  Check the dist folder.
 
 ## Issues?
 

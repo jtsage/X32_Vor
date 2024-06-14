@@ -12,3 +12,5 @@ npx postject x32vor NODE_SEA_BLOB sea-prep.blob \
     --macho-segment-name NODE_SEA 
 
 codesign --sign - x32Vor
+
+mv x32Vor ../dist/
