@@ -1,2 +1,4 @@
 node_modules/
 .DS_Store
+build/sea-prep.blob
+build/bundled.js
