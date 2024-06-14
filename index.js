@@ -5,15 +5,16 @@
 *   /_/\_\____/_____|___\_/  \___/|_| \_\
 *   (c) 2024 J.T.Sage, ISC License
 */
-/* eslint-disable no-console */
 
 // Main Module, run this
 
 const dgram            = require('node:dgram')
 const commandLineArgs  = require('command-line-args')
 const commandLineUsage = require('command-line-usage')
-const x32              = require('./lib/x32_adapt.js')
+const {x32State}       = require('./lib/state_lib.js')
 const {winLib}         = require('./lib/window_lib.js')
+const osc              = require('simple-osc-lib')
+const osc_x32          = require('simple-osc-lib/x32.js')
 
 /* eslint-disable sort-keys */
 const CLI_OPTIONS = [
@@ -24,7 +25,7 @@ const CLI_OPTIONS = [
 	{ name : 'listen',          alias : 'l', type : String,  defaultValue : ['cue', 'dca'], multiple : true },
 
 	{ name : 'vorJitter',                    type : Number,  defaultValue : 0.05 },
-	{ name : 'vorFreq',                      type : Number,  defaultValue : 500 },
+	{ name : 'vorFreq',                      type : Number,  defaultValue : 100  },
 	{ name : 'vorPort',         alias : 'o', type : Number,  defaultValue : 3333 },
 	{ name : 'vorIP',                        type : String,  defaultValue : '127.0.0.1' },
 
@@ -121,7 +122,7 @@ const CLI_HELP = [
 			},
 			{
 				alias       : 'd',
-				description : 'Print all incoming X32 OSC messages (implies {bold --noGUI})',
+				description : 'Print all incoming X32 OSC messages',
 				name        : 'debug',
 				type        : Boolean,
 			},
@@ -133,26 +134,26 @@ const CLI_HELP = [
 		],
 	}
 ]
-const VALID_LISTEN = [
+const VALID_LISTEN = new Set([
 	'cue', 'dca1', 'dca2', 'dca3', 'dca4',
 	'dca5', 'dca6', 'dca7', 'dca8', 'bus01',
 	'bus02', 'bus03', 'bus04', 'bus05', 'bus06',
 	'bus07', 'bus08', 'bus09', 'bus10', 'bus11',
 	'bus12', 'bus13', 'bus14', 'bus15', 'bus16'
-]
+])
 
 const options = commandLineArgs(CLI_OPTIONS)
 const usage   = commandLineUsage(CLI_HELP)
 
 if ( options.help ) {
+	// eslint-disable-next-line no-console
 	console.log(usage)
 	process.exit(0)
 }
-if ( options.debug ) {
-	options.noGUI = true
-}
 if ( !options.ip ) {
+	// eslint-disable-next-line no-console
 	console.log('ERROR :: IP Address of X32 Required')
+	// eslint-disable-next-line no-console
 	console.log(usage)
 	process.exit(1)
 }
@@ -169,23 +170,44 @@ if ( options.listen.includes('bus') ) {
 options.listen = [...new Set(options.listen)] // remove duplicates, again
 
 for ( const thisListenItem of options.listen ) {
-	if ( ! VALID_LISTEN.includes(thisListenItem) ) {
+	if ( ! VALID_LISTEN.has(thisListenItem) ) {
+		// eslint-disable-next-line no-console
 		console.log(`ERROR :: Invalid Listener Specified :: ${thisListenItem}`)
+		// eslint-disable-next-line no-console
 		console.log(usage)
 		process.exit(1)
 	}
 }
 
-const CURRENT_STATE = x32.getStateMap()
-const START_MAP     = x32.getNameMap()
-const thisWindow    = new winLib(CURRENT_STATE)
+const x32Pre = new osc_x32.x32PreProcessor({
+	activeNodeTypes : [
+		'busConfig',  'busMix',
+		'cue',        'cueCurrent',
+		'dcaConfig',  'dcaMix',
+		'scene',      'show',
+		'showMode',   'snippet'
+	],
+	activeRegularTypes : [
+		'busLevel',  'busMute',
+		'busName',   'cueCurrent',
+		'dcaLevel',  'dcaMute',
+		'dcaName',   'showMode'
+	],
+})
+
+const oscX32 = new osc.simpleOscLib({
+	strictMode : true,
+	preprocessor : (msg) => x32Pre.readMessage(msg),
+})
+
+const X32_STATE   = new x32State(options, null)
+const thisWindow  = new winLib(X32_STATE)
 
 if ( ! options.noGUI ) {
 	thisWindow.doSetupAndClear()
 	thisWindow.paint()
 
 	setInterval(() => { thisWindow.paint() }, 1000)
-	// process.on('SIGWINCH', () => {this.doSetupAndClear()})
 }
 
 const x32Socket = dgram.createSocket({type : 'udp4', reuseAddr : true})
@@ -193,225 +215,81 @@ const vorSocket = dgram.createSocket({type : 'udp4', reuseAddr : true})
 
 x32Socket.on('message', processFromX32)
 x32Socket.on('error', (err) => {
-	printInfo(`x32 listener error:\n${err.stack}`, true)
+	X32_STATE.addMsg(`x32 listener error:\n${err.stack}`)
 	x32Socket.close()
 })
 x32Socket.on('listening', () => {
 	const address = x32Socket.address()
-	printInfo(`listening to X32 on ${address.address}:${address.port}`, true)
+	X32_STATE.addMsg(`listening to X32 on ${address.address}:${address.port}`)
 })
 x32Socket.bind(options.port)
 
-if ( options.testData ) {
-	const {nodeLines} = require('./test_dev/fake_data.js')
-
-	for ( let i = 1; i < nodeLines.length; i++ ) {
-		const oscOperation = x32.processOSCMessage(nodeLines[i])
-		try {
-			processOSCOperation(oscOperation)
-		} catch (err) {
-			printInfo(`Bad OSC Handling :: ${err}`)
-		}
-	}
-}
-
-getInitialData()
+sendToX32(X32_STATE.oscFullState())
 
 // Keeps the /xremote command alive every keepAlive
 setInterval(() => {
-	sendToX32(x32.xRemote)
-	if ( options.verbose || !options.noGUI ) { printInfo('pinging x32...')}
+	sendToX32(X32_STATE.oscXRemote())
+	X32_STATE.addMsg('pinging x32...', true)
 }, options.keepAlive)
 
-// Refreshes the cue list every keepAlive x 10
+// Refreshes the cue list and all data every keepAlive x 10
 setInterval(() => {
-	sendToX32(x32.showData)
-	if ( options.verbose || !options.noGUI ) { printInfo('pinging x32 show data...')}
+	sendToX32(X32_STATE.oscFullState())
+	X32_STATE.addMsg('pinging x32 show data...', true)
 }, options.keepAlive * 10 )
 
 // Update VOR
-setInterval(updateVor, options.updateFrequency)
+setInterval(sendToVor, options.vorFreq)
 
 
 /* -=-=-=-=-=-=-
 Worker Functions
 -=-=-=-=-=-=- */
 
-// Get initial data from X32 (otherwise no update until change)
-function getInitialData() {
-	
-	for ( const thisItem of VALID_LISTEN ) {
-		if ( Object.hasOwn(START_MAP, thisItem) ) {
-			for ( const oscMsg of START_MAP[thisItem] ) {
-				sendToX32(oscMsg)
-			}
-		}
-	}
-	sendToX32(x32.oscMessage('/node', '-prefs/show_control'))
-	sendToX32(x32.showData)
-	sendToX32(x32.xRemote)
-}
-
-// Send an update to VOR
-function updateVor() {
-	const updateBundle = {
-		elements : [],
-		timetag  : x32.now() + options.vorJitter/1000, // Offset for transit time
-	}
-
-	for ( const thisItem of options.listen ) {
-		if ( thisItem === 'cue' ) {
-			updateBundle.elements.push(x32.oscObject(
-				'/currentCue',
-				CURRENT_STATE.cue_list?.[CURRENT_STATE.current_cue]?.[0] ?? '0.0.0',
-				CURRENT_STATE.cue_list?.[CURRENT_STATE.current_cue]?.[1] ?? ''
-			))
-		} else if ( thisItem.startsWith('dca') ) {
-			const dcaNumber = parseInt(thisItem.substring(thisItem.length - 1), 10)
-			const dcaState  = CURRENT_STATE.dca[dcaNumber]
-			const dcaName   = dcaState[2] === '' ? thisItem.toUpperCase() : dcaState[2]
-			updateBundle.elements.push(x32.oscObject(
-				`/dca/${dcaNumber}`, dcaState[0], dcaState[1], dcaName
-			))
-		} else if ( thisItem.startsWith('bus') ) {
-			const busNumber  = thisItem.substring(thisItem.length - 2)
-			const busNumberI = parseInt(busNumber, 10)
-			const busState  = CURRENT_STATE.bus[busNumberI]
-			const busName   = busState[2] === '' ? thisItem.toUpperCase() : busState[2]
-			updateBundle.elements.push(x32.oscObject(
-				`/bus/${busNumber}`, busState[0], busState[1], busName
-			))
-		}
-	}
-
-	sendToVor(x32.toOSCBuffer(updateBundle))
-}
-
 // Send a packet to the X32
-function sendToX32(data) {
-	x32Socket.send(data, 0, data.length, options.port, options.ip)
+function sendToX32(messageList) {
+	for ( const thisMessage of messageList ) {
+		const data = oscX32.buildMessage(thisMessage)
+		x32Socket.send(data, 0, data.length, options.port, options.ip)
+	}
 }
 
 // Send a packet to VOR
-function sendToVor(data) {
-	CURRENT_STATE.last_size = data.length
-	vorSocket.send(data, 0, data.length, options.vorPort, options.vorIP)
+function sendToVor() {
+	const messageList = X32_STATE.vorUpdate()
+	if ( messageList.length !== 0 ) {
+		const data = oscX32.buildBundle({
+			timetag  : oscX32.getTimeTagBufferFromDelta(options.vorJitter / 1000),
+			elements : messageList,
+		})
+		X32_STATE.last_packet_size = data.length
+		vorSocket.send(data, 0, data.length, options.vorPort, options.vorIP)
+	}
 }
 
 // Process packet from the X32
 function processFromX32(msg, _rinfo) {
 	try {
-		const oscMessage   = x32.decode(msg)
-		if ( options.debug ) { console.log('From X32 :: ', oscMessage) }
 		try {
-			const oscOperation = x32.processOSCMessage(oscMessage)
+			const oscMessage = oscX32.readMessage(msg)
+			if ( options.debug ) {
+				X32_STATE.addMsg(`${oscMessage.wasProcessed.toString().padEnd(6, ' ')}${oscX32.printableBuffer(msg)}`, true)
+			}
 			try {
-				processOSCOperation(oscOperation)
+				processMessage(oscMessage)
 			} catch (err) {
-				printInfo(`bad OSC handling :: ${oscMessage} :: ${err}`)
+				X32_STATE.addMsg(`bad OSC handling :: ${oscMessage} :: ${err}`)
 			}
 		} catch (err) {
-			printInfo(`bad OSC decode :: ${oscMessage} :: ${err}`)
+			X32_STATE.addMsg(`bad OSC decode :: ${oscX32.printableBuffer(msg)} :: ${err}`)
 		}
 	} catch (err) {
-		printInfo(`invalid OSC packet :: ${err}`)
+		X32_STATE.addMsg(`invalid OSC packet :: ${err}`, false)
 	}
 }
 
-function processOSCOperation (oscOperation) {
-	if ( oscOperation.endpoint === null ) { return }
+function processMessage(oscMessage) {
+	if ( ! oscMessage.wasProcessed ) { return }
 
-	if ( oscOperation.endpoint.type === 'cueListDirty' ) {
-		sendToX32(x32.showData)
-	} else if ( oscOperation.endpoint.type === 'rebuildCueList' ) {
-		printInfo('clearing cue data...')
-		CURRENT_STATE.cue_list = []
-	} else if ( oscOperation.args === null ) {
-		// payload-less real operation - this shouldn't happen in production, ever.
-		return
-	} else if ( oscOperation.endpoint.type === 'mode' ) {
-		printInfo('setting new cue mode...')
-		sendToX32(x32.showData)
-		if ( typeof oscOperation.args[0] === 'number' ) {
-			CURRENT_STATE.mode = ['cue', 'scene', 'snippet'][oscOperation.args[0]]
-		} else {
-			CURRENT_STATE.mode = oscOperation.args[0].toLowerCase().slice(0, -1)
-		}
-	} else if ( oscOperation.endpoint.type === 'currentCue' ) {
-		CURRENT_STATE.current_cue = parseInt(oscOperation.args[0], 10)
-		printInfo(`setting current cue... ${oscOperation.args[0]}`)
-	} else if ( oscOperation.endpoint.type === 'dca' ) {
-		const faderIdx = oscOperation.endpoint.faderNumI
-		switch ( oscOperation.endpoint.operation ) {
-			case 'on' :
-				CURRENT_STATE.dca[faderIdx][1] = oscOperation.args[0] ? 'ON' : 'OFF'
-				break
-			case 'config/name' :
-				CURRENT_STATE.dca[faderIdx][2] = oscOperation.args[0] === '' ? `DCA${faderIdx}` : oscOperation.args[0]
-				break
-			case 'fader' :
-				CURRENT_STATE.dca[faderIdx][0] = x32.float2Db(oscOperation.args[0])
-				break
-			case 'config' : {
-				const newName = oscOperation.args[0].replace(/^"|"$/g, '')
-				CURRENT_STATE.dca[faderIdx][2] = newName === '' ? `DCA${faderIdx}` : newName
-				break
-			}
-			case 'mix' :
-				CURRENT_STATE.dca[faderIdx][1] = oscOperation.args[0]
-				CURRENT_STATE.dca[faderIdx][0] = `${oscOperation.args[1]} dB`
-				break
-			default :
-				break
-		}
-	} else if ( oscOperation.endpoint.type === 'bus' ) {
-		const faderIdx = oscOperation.endpoint.faderNumI
-		switch ( oscOperation.endpoint.operation ) {
-			case 'mix/on' :
-				CURRENT_STATE.bus[faderIdx][1] = oscOperation.args[0] ? 'ON' : 'OFF'
-				break
-			case 'config/name' :
-				CURRENT_STATE.bus[faderIdx][2] = oscOperation.args[0] === '' ? `MixBus ${oscOperation.endpoint.faderNum}` : oscOperation.args[0]
-				break
-			case 'mix/fader' :
-				CURRENT_STATE.bus[faderIdx][0] = x32.float2Db(oscOperation.args[0])
-				break
-			case 'config' : {
-				const newName = oscOperation.args[0].replace(/^"|"$/g, '')
-				CURRENT_STATE.bus[faderIdx][2] = newName === '' ? `MixBus ${oscOperation.endpoint.faderNum}` : newName
-				break
-			}
-			case 'mix' :
-				CURRENT_STATE.bus[faderIdx][1] = oscOperation.args[0]
-				CURRENT_STATE.bus[faderIdx][0] = `${oscOperation.args[1]} dB`
-				break
-			default :
-				break
-		}
-	} else if ( oscOperation.endpoint.type === 'cue' && oscOperation.endpoint.subtype === CURRENT_STATE.mode ) {
-		if ( oscOperation.endpoint.subtype === 'cue' ) {
-			const cueParts = [...oscOperation.args[0]]
-			let cueNum = cueParts.pop()
-			cueNum = `${cueParts.pop()}.${cueNum}`
-			cueNum = `${cueParts.join('')}.${cueNum}`
-			const cueName = oscOperation.args[1].replace(/^"|"$/g, '')
-			CURRENT_STATE.cue_list[oscOperation.endpoint.cueNum] = [cueNum, cueName]
-			printInfo(`adding ${CURRENT_STATE.mode} ${cueNum} :: ${cueName}`)
-		} else {
-			const cueName = oscOperation.args[0].replace(/^"|"$/g, '')
-			CURRENT_STATE.cue_list[oscOperation.endpoint.cueNum] = [oscOperation.endpoint.cueNum, cueName]
-			printInfo(`adding ${CURRENT_STATE.mode} ${cueName}`)
-		}
-	} else if ( oscOperation.endpoint.type !== 'cue' ) {
-		printInfo(`MISSED :: ${oscOperation.endpoint.type}`)
-	}
-}
-
-
-function printInfo(text, skipVerbose = false) {
-	if ( options.noGUI && (options.verbose || skipVerbose) ) {
-		console.log(text)
-	} else {
-		x32.addMsg(text.toString(), CURRENT_STATE)
-	}
+	X32_STATE.processState(oscMessage)
 }
