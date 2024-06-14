@@ -4,22 +4,20 @@
   "description": "X32 Vor Interface",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "node ./test_dev/test-trans.js"
+    "start": "node index.js"
   },
-  "author": "",
+  "author": "J.T.Sage",
   "license": "ISC",
   "dependencies": {
     "ansi": "^0.3.1",
-    "command-line-args": "^5.2.1",
-    "command-line-usage": "^7.0.1",
-    "osc-min": "^1.1.2"
+    "simple-osc-lib": "^1.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.24.7",
     "@babel/eslint-parser": "^7.24.7",
     "esbuild": "0.21.5",
     "eslint": "^9.4.0",
-    "eslint-plugin-unicorn": "^53.0.0"
+    "eslint-plugin-unicorn": "^53.0.0",
+    "globals": "^15.4.0"
   }
 }

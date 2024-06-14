@@ -14,6 +14,7 @@ export default [
 				...globals.browser,
 				...globals.node,
 				...globals.es2021,
+				...globals.jest,
 			},
 			parser      : babelParser,
 			parserOptions : {
@@ -137,6 +138,6 @@ export default [
 			'unicorn/prefer-spread'                    : 'error',
 			'unicorn/require-array-join-separator'     : 'error',
 			'unicorn/throw-new-error'                  : 'error',
-		}
+		},
 	}
 ]

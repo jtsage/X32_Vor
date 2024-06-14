@@ -4,7 +4,7 @@ Make your X32 talk to Vor
 
 ## Status
 
-___working___ In testings.  My test rig has a wired ethernet to the X32, and VOR is on the same machine.
+___Working___, in testing.  My test rig has a wired ethernet to the X32, and VOR is on the same machine.
 
 ## Overview
 
@@ -40,7 +40,7 @@ $ npm start --help
                         Default is cue, dca
 --vorIP address         IP for Vor (127.0.0.1)
 -o, --vorPort port      Port for Vor (3333)
---vorFreq ms            Vor update frequency in milliseconds (500ms)
+--vorFreq ms            Vor update frequency in milliseconds (100ms) (100ms for changes, every 10th time everything is sent)
 --vorJitter ms          Vor jitter frequency in milliseconds (50ms)
 ```
 
@@ -63,7 +63,7 @@ Because OSC uses UDP with all of the technical considerations and limits that im
 
 __The maximum safe UDP payload is 508 bytes.__ This is a packet size of 576 (the "minimum maximum reassembly buffer size"), minus the maximum 60-byte IP header and the 8-byte UDP header.
 
-If your packet size exceeds the maximum above, it will be fragmented - on a local network, this is probably still fine (including local loopback), but if one fragment fails to deliver, the entire packet is dropped.  Because X32Vor transmits the entire state each send window, in practice, this is probably fine - but if you notice a lot of stutter in the data, try reducing the amount of measurements you are listening to.
+If your packet size exceeds the maximum above, it will be fragmented - on a local network, this is probably still fine (including local loopback), but if one fragment fails to deliver, the entire packet is dropped.  Because X32Vor transmits the entire state each send 10th send window (those windows between only what has changed sends), in practice, this is probably fine - but if you notice a lot of stutter in the data, try reducing the amount of measurements you are listening to.
 
 Likewise, it takes some amount of time for the UDP packet to arrive - and each packet is timestamped 50ms in the future (by default) - if it arrives after this time, it will be ignored (configurable in VOR).  If your stream jitters, you can try increasing this time offset.
 
@@ -122,7 +122,7 @@ Add a [Custom OSC](https://docs.getvor.app/vor/settings/connections/show-control
 
 ![Options Window](./doc/vorUDP.webp)
 
-By default, X32_Vor uses port 3333, but you can use whatever you want as a command line option __--vorPort=4444__.  Outputting to VOR on a different physical address (different machine) has never been tested.
+By default, X32_Vor uses port 3333, but you can use whatever you want as a command line option __--vorPort=4444__.  Outputting to VOR on a different physical address is possible with the __--vorIP__ option.  This has been briefly tested with Vor Mobile
 
 ### Add VOR addresses
 
