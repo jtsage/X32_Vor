@@ -85,10 +85,10 @@ setInterval(() => {
 }, options.keepAlive)
 
 // Refreshes the cue list and all data every keepAlive x 10
-// setInterval(() => {
-// 	sendToX32(X32_STATE.oscFullState())
-// 	X32_STATE.addMsg('pinging x32 show data...', true)
-// }, options.keepAlive * 10 )
+setInterval(() => {
+	sendToX32(X32_STATE.oscFullState())
+	X32_STATE.addMsg('pinging x32 show data...', true)
+}, options.keepAlive * 10 )
 
 // Update VOR
 setInterval(sendToVor, options.vorFreq)
@@ -110,12 +110,16 @@ function sendToX32(messageList) {
 function sendToVor() {
 	const messageList = X32_STATE.vorUpdate()
 	if ( messageList.length !== 0 ) {
-		const data = oscX32.buildBundle({
-			timetag  : oscX32.getTimeTagBufferFromDelta(options.vorJitter / 1000),
-			elements : messageList,
-		})
-		X32_STATE.last_packet_size = data.length
-		vorSocket.send(data, 0, data.length, options.vorPort, options.vorIP)
+		try {
+			const data = oscX32.buildBundle({
+				timetag  : oscX32.getTimeTagBufferFromDelta(options.vorJitter / 1000),
+				elements : messageList,
+			})
+			X32_STATE.last_packet_size = data.length
+			vorSocket.send(data, 0, data.length, options.vorPort, options.vorIP)
+		} catch {
+			X32_STATE.addMsg('inconsistent data, Vor update not sent', false)
+		}
 	}
 }
 
