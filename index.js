@@ -25,6 +25,7 @@ const CLI_OPT_LIST = {
 	'ip'         : { type : 'string',  short : 'i', default : '' },
 	'keepAlive'  : { type : 'string',               default : '5000' },
 	'listen'     : { type : 'string',  short : 'l', default : ['cue', 'dca'], multiple : true },
+	'no-gui'     : { type : 'boolean',              default : false },
 	'port'       : { type : 'string',  short : 'p', default : '10023' },
 	'verbose'    : { type : 'boolean', short : 'v', default : false },
 	'vor-freq'   : { type : 'string',               default : '100'  },
@@ -44,21 +45,7 @@ const VALID_LISTEN = new Set([
 
 const options = prepArguments()
 
-const x32Pre = new osc_x32.x32PreProcessor({
-	activeNodeTypes : [
-		'busConfig',  'busMix',
-		'cue',        'cueCurrent',
-		'dcaConfig',  'dcaMix',
-		'scene',      'show',
-		'showMode',   'snippet'
-	],
-	activeRegularTypes : [
-		'busLevel',  'busMute',
-		'busName',   'cueCurrent',
-		'dcaLevel',  'dcaMute',
-		'dcaName',   'showMode'
-	],
-})
+const x32Pre = new osc_x32.x32PreProcessor(['show*', 'dca*', 'bus*'])
 
 const oscX32 = new osc.simpleOscLib({
 	strictMode : true,
@@ -98,10 +85,10 @@ setInterval(() => {
 }, options.keepAlive)
 
 // Refreshes the cue list and all data every keepAlive x 10
-setInterval(() => {
-	sendToX32(X32_STATE.oscFullState())
-	X32_STATE.addMsg('pinging x32 show data...', true)
-}, options.keepAlive * 10 )
+// setInterval(() => {
+// 	sendToX32(X32_STATE.oscFullState())
+// 	X32_STATE.addMsg('pinging x32 show data...', true)
+// }, options.keepAlive * 10 )
 
 // Update VOR
 setInterval(sendToVor, options.vorFreq)
@@ -165,6 +152,7 @@ function prepArguments() {
 		debug     : values.debug,
 		ip        : values.ip === '' ? positionals[0] : values.ip,
 		keepAlive : parseInt(values.keepAlive),
+		noGUI     : values['no-gui'],
 		port      : parseInt(values.port),
 		verbose   : values.verbose,
 		vorFreq   : parseInt(values['vor-freq']),
