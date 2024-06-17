@@ -1,6 +1,6 @@
 # X32/M32 Vor Adapter
 
-Make your X32 talk to Vor
+Make your X32 talk to Vor (or anything else that reads custom OSC I suppose)
 
 ## Status
 
@@ -8,58 +8,60 @@ ___Working___, in testing.  My test rig has a wired ethernet to the X32, and VOR
 
 ## Overview
 
+![vor](./doc/sample_vor.png)
+
 ### Terminal View
+
+X32Vor has a pretty ansi styled terminal to show it's working.  It even sizes itself to fit as best it can.
 
 ![term](./doc/sample_term.png)
 
-### Vor View
-
-![vor](./doc/sample_vor.png)
-_World's cheapest webcam, sorry_
-
-## Synopsis
+### Synopsis
 
 ```shell
-$ npm start [--verbose] x32_address
-$ npm start [--verbose] --listen cue dca bus --ip x32_address
-$ npm start --help
+$ node index.js --ip x32_address
+$ node index.js --config config.file.json
+$ node index.js --help
 ```
 
-## X32 Configuration
+### X32 Configuration
 
 ```plain
---ip address      IP Address of the X32 [required]
--p, --port port   Port of the X32 (10023)
+-i, --ip address              IP Address of the X32 [required]
 ```
 
-## Vor Configuration
+### Vor Configuration
 
 ```plain
--l, --listen item ...   Updates to populate to Vor.
-                        Items: cue, dca, dca1 - dca8, bus, bus01 - bus16.
-                        Default is cue, dca
---vorIP address         IP for Vor (127.0.0.1)
--o, --vorPort port      Port for Vor (3333)
---vorFreq ms            Vor update frequency in milliseconds (100ms) (100ms for changes, every 10th time everything is sent)
---vorJitter ms          Vor jitter frequency in milliseconds (50ms)
+-o, --vor-ip address          IP for Vor (127.0.0.1)
+-o, --vor-port port           Port for Vor (3333)
 ```
 
-## Options
+### Options
 
 ```plain
---help           Print this usage guide.
--v, --verbose    Print lots of debug data
--d, --debug      Print all incoming X32 OSC messages (implicit --noGUI)
---noGUI          Suppress usual display
+-c, --config config.json      Read configuration from a file
+-w, --write new.config.json   Write configuration to a file
+--no-gui          Suppress the ansi terminal display
 ```
+
+## Configuration
+
+X32Vor might be configured just fine out of the box. But, the easiest way to mess with things is to launch the script with the `--write` option and edit the file.  You'll need to provide _at least_ a X32 IP address to write the file.
+
+If you name your configuration file `x32_vor.config.json`, it will be automatically loaded at startup (unless another configuration file is specified)
+
+X32Vor tracks cues, scenes, snippets, dca's, and busses. The `vor.output` directive controls which of these are __sent__ to Vor - the valid options are `cue`, `dca`, `bus`, `dca1`->`dca8`, and `bus01`->`bus16`
+
+For more detailed information on the rest of the possible settings, take a look at the [default settings](https://github.com/jtsage/X32_Vor/blob/main/lib/default_settings.js)
 
 ## Cues, Scenes or Snippets
 
-X32_Vor will load the "cue list" with whatever the show_control setting on the X32 is.
+X32Vor sends the current cue string that is appropriate to the X32 Show Control setting.
 
 ## Packet Size and Jitter
 
-Because OSC uses UDP with all of the technical considerations and limits that implies, it is important to set your __--listen__ directive with the minimum you need.
+Because OSC uses UDP with all of the technical considerations and limits that implies, it is important to set your `vor.output` directive with the minimum you need.
 
 __The maximum safe UDP payload is 508 bytes.__ This is a packet size of 576 (the "minimum maximum reassembly buffer size"), minus the maximum 60-byte IP header and the 8-byte UDP header.
 
@@ -67,29 +69,31 @@ If your packet size exceeds the maximum above, it will be fragmented - on a loca
 
 Likewise, it takes some amount of time for the UDP packet to arrive - and each packet is timestamped 50ms in the future (by default) - if it arrives after this time, it will be ignored (configurable in VOR).  If your stream jitters, you can try increasing this time offset.
 
-## Install (mac)
+## Install (macOS)
+
+Windows is similar, but Vor does not run on Windows PC's - you still may want to use a windows machine if you need to process the X32 messages on somewhere else - X32Vor can broadcast the Vor packets to a network address other than localhost.
 
 ### Install Node.js
 
-1. create `~/.zprofile` if it does not already exist (default mac shell is zsh - if you've changed it, you likely already have a .profile or .bashrc or whatever.)
+create `~/.zprofile` if it does not already exist (default mac shell is zsh - if you've changed it, you likely already have a .profile or .bashrc or whatever.)
 
 ```shell
 $ touch ~/.zprofile
 ```
 
-2. install nvm (Node Version Manager)
+install nvm (Node Version Manager)
 
 ```shell
 $ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 ```
 
-3. restart the terminal and install node.js
+restart the terminal and install node.js
 
 ```shell
 $ nvm install 20
 ```
 
-4. Verify installation
+Verify installation
 
 ```shell
 $ node -v 
@@ -98,9 +102,13 @@ $ npm -v
 10.7.0
 ```
 
-### Clone or download the repository as a ZIP
+### Clone the repository, or download the repository as a ZIP
 
 Use GIT to clone the repository, or, download the source ZIP file from GitHub
+
+```shell
+$ git clone https://github.com/jtsage/X32_Vor.git
+```
 
 ### Install Dependencies
 
@@ -110,32 +118,41 @@ In the folder of the repository (or the unzipped files), run `npm`
 $ npm install
 ```
 
-### Run The program
+### Create a configuration file
 
 ```shell
-$ npm start [X32_IP_Address] [options]
+$ node index.js -i [X32_IP_Address] -w x32_vor.config.json
 ```
 
 ### Configure VOR
 
 Add a [Custom OSC](https://docs.getvor.app/vor/settings/connections/show-control/custom-osc) connection of type UDP.
 
-![Options Window](./doc/vorUDP.webp)
+![Options Window](./doc/vor_connect.png)
 
-By default, X32_Vor uses port 3333, but you can use whatever you want as a command line option __--vorPort=4444__.  Outputting to VOR on a different physical address is possible with the __--vorIP__ option.  This has been briefly tested with Vor Mobile
+By default, X32Vor uses port 3333, but you can use whatever you want as a command line switch __-p 4444__ (Option `vor.port`).  Outputting to VOR on a different physical address is possible with the __-o 10.1.1.10__ switch (Option `vor.address`).  This has been briefly tested with Vor Mobile
 
 ### Add VOR addresses
 
-Add any of the available address endpoints. They must be configured with the __--listen__ option (or in the defaults).  All addresses return only strings
+Add any of the available address endpoints. They must be configured with the `vor.output` option (or in the defaults).  All addresses return only strings
 
 Available:
 
-* /currentCue _[cue number] [cue name]_
-* /dca/__[dca number]__ _[level] [on/off] [name]_
+* /currentCue _[cue string]_
+* /dca/__[dca number]__ _[single fader string]_
+* /bus/__[bus number]__ _[single fader string]_
+
+The fader string can be set with the `vor.singleStringFormat` option. If you prefer to do more layout work in Vor, you can have faders sent as three strings instead by setting `vor.singleStringMode` to `false` to get:
+
 * /bus/__[bus number]__ _[level] [on/off] [name]_
 
 ___Note: Bus number must be zero-padded, e.g. `/bus/01`, not `/bus/1`___
 
+### Setup Layout
+
+Example shown for current cue.
+
+![vor layout](./doc/vor_cue.png)
 
 ## Coverage
 
@@ -144,10 +161,12 @@ This is a list with processed arguments of what OSC messages X32_Vor processes. 
 ### Cues
 
 ```plain
-/-prefs/show_control [i~index of](!OR!)[s~CUES,SCENES,SNIPPETS] (all referred to as cues by X32Vor)
-/-show/prepos/current [i~current cue index]
+/-prefs/show_control [i~index of](!OR!)[s~CUES,SCENES,SNIPPETS] 
+/-show/prepos/current [i~current cue/scene/snippet index]
 /-show/showfile/show (no args processed, when seen, clear internal cue list)
-/-show/showfile/cue/[cueIndex] [i~cueNumber] [s~cue Name] (others ignored)
+/-show/showfile/cue/[index] [i~cueNumber] [s~cue Name] [i~skip?] [i~scene index] [i~snippet index] 
+/-show/showfile/scene/[index] [s~scene name] [s~scene note] 
+/-show/showfile/snippet/[index] [s~snippet Name] 
 ```
 
 ### DCAs
@@ -172,7 +191,7 @@ This is a list with processed arguments of what OSC messages X32_Vor processes. 
 
 ## Actual workflow
 
-Pseudo-code follows, for anyone looking to do something simlar for the X32/M32 series
+Pseudo-code follows, for anyone looking to do something similar for the X32/M32 series
 
 ### Boilerplate
 
@@ -181,25 +200,31 @@ function sendToX32(oscAddress, parameter1, parameter2, ...) { /* ... */ }
 ```
 
 ### Startup
+
+Get the show control mode, current cue index, and show data.  Get the fader, mute, and name status for all DCA's and BUS's
+
 ```js
 sendToX32('/node', '-prefs/show_control'))
 sendToX32('/node', '-show/prepos/current')
+sendToX32('/showdata')
 sendToX32('/node', 'dca/[1-8]')
 sendToX32('/node', 'dca/[1-8]/config')
 sendToX32('/node', 'bus/[01-16]')
 sendToX32('/node', 'bus/[01-16]/config')
-sendToX32('/showdata')
 sendToX32('/xremote')
 ```
 
-### Repeat every keepAlive (5000ms)
+### Repeat every keepAlive < 10sec
+
+The X32 times out the `xremote` command after 10 seconds. X32Vor re-sends every 5 seconds just to be sure.
+
 ```js
 sendToX32('/xremote')
 ```
 
-### Repeat every keepAlive * 10 (50,000ms)
+### Repeat every keepAlive ~ 1min
 
-Or, when an event is received where we thing the cue list has changed - this includes cue/scene/snippet save/delete/edit
+Or, when an event is received where we think the cue list has changed - this includes cue/scene/snippet save/delete/edit
 
 ```js
 sendToX32('/showdata')
