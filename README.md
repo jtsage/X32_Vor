@@ -204,7 +204,7 @@ function sendToX32(oscAddress, parameter1, parameter2, ...) { /* ... */ }
 Get the show control mode, current cue index, and show data.  Get the fader, mute, and name status for all DCA's and BUS's
 
 ```js
-sendToX32('/node', '-prefs/show_control'))
+sendToX32('/node', '-prefs/show_control')
 sendToX32('/node', '-show/prepos/current')
 sendToX32('/showdata')
 sendToX32('/node', 'dca/[1-8]')
