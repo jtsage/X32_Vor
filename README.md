@@ -161,19 +161,24 @@ This is a list with processed arguments of what OSC messages X32_Vor processes. 
 ### Cues
 
 ```plain
-/-prefs/show_control [i~index of](!OR!)[s~CUES,SCENES,SNIPPETS] 
+/-prefs/show_control [i~index of]
+node s~{-prefs/show_control [s~CUES,SCENES,SNIPPETS] }
+
 /-show/prepos/current [i~current cue/scene/snippet index]
-/-show/showfile/show (no args processed, when seen, clear internal cue list)
-/-show/showfile/cue/[index] [i~cueNumber] [s~cue Name] [i~skip?] [i~scene index] [i~snippet index] 
-/-show/showfile/scene/[index] [s~scene name] [s~scene note] 
-/-show/showfile/snippet/[index] [s~snippet Name] 
+node s~{-show/prepos/current [i~current cue/scene/snippet index]}
+
+node s~{-show/showfile/show (no args processed, when seen, clear internal cue list)}
+node s~{-show/showfile/cue/[index] [i~cueNumber] [s~cue Name] [i~skip?] [i~scene index] [i~snippet index] }
+node s~{-show/showfile/scene/[index] [s~scene name] [s~scene note] }
+node s~{-show/showfile/snippet/[index] [s~snippet Name] }
 ```
 
 ### DCAs
 
 ```plain
-/dca/[1-8] [s~ON/OFF] [s~level in dB]
-/dca/[1-8]/config [s~DCA Name] (others ignored)
+node s~{dca/[1-8] [s~ON/OFF] [s~level in dB]}
+node s~{dca/[1-8]/config [s~DCA Name] (others ignored)}
+
 /dca/[1-8]/config/name [s~DCA Name]
 /dca/[1-8]/on [i~ON/OFF bool]
 /dca/[1-8]/fader [f~level in float]
@@ -182,10 +187,11 @@ This is a list with processed arguments of what OSC messages X32_Vor processes. 
 ### BUSes
 
 ```plain
-/bus/[01-16]/mix [s~ON/OFF] [s~level in dB] (others ignored)
+node s~{bus/[01-16]/mix [s~ON/OFF] [s~level in dB] (others ignored)}
+node s~{bus/[01-16]/config [s~DCA Name] (others ignored)}
+
 /bus/[01-16]/mix/fader [f~level in float]
 /bus/[01-16]/mix/on [i~ON/OFF bool]
-/bus/[01-16]/config [s~DCA Name] (others ignored)
 /bus/[01-16]/config/name [s~DCA Name]
 ```
 
