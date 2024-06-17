@@ -4,3 +4,4 @@ build/sea-prep.blob
 build/bundled.js
 /*.config.json
 /dist/*.config.json
+/dist/*.zip
