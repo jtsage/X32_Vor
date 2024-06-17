@@ -8,32 +8,30 @@
 
 // Main Module, run this
 
-const dgram            = require('node:dgram')
-const {parseArgs}      = require('node:util')
-const {x32State}       = require('./lib/state_lib.js')
-const {winLib}         = require('./lib/window_lib.js')
-const osc              = require('simple-osc-lib')
-const osc_x32          = require('simple-osc-lib/x32.js')
-const ansi             = require('ansi')
+const dgram             = require('node:dgram')
+const path              = require('node:path')
+const fs                = require('node:fs')
+const {parseArgs}       = require('node:util')
+const {x32State}        = require('./lib/state_lib.js')
+const {winLib}          = require('./lib/window_lib.js')
+const {defaultSettings} = require('./lib/default_settings.js')
+const osc               = require('simple-osc-lib')
+const osc_x32           = require('simple-osc-lib/x32.js')
+const ansi              = require('ansi')
 
 const cursor = ansi(process.stdout)
 
-/* eslint-disable sort-keys */
 const CLI_OPT_LIST = {
-	'debug'      : { type : 'boolean', short : 'd', default : false },
 	'help'       : { type : 'boolean', short : 'h', default : false },
-	'ip'         : { type : 'string',  short : 'i', default : '' },
-	'keepAlive'  : { type : 'string',               default : '5000' },
-	'listen'     : { type : 'string',  short : 'l', default : ['cue', 'dca'], multiple : true },
-	'no-gui'     : { type : 'boolean',              default : false },
-	'port'       : { type : 'string',  short : 'p', default : '10023' },
-	'verbose'    : { type : 'boolean', short : 'v', default : false },
-	'vor-freq'   : { type : 'string',               default : '100'  },
-	'vor-ip'     : { type : 'string',               default : '127.0.0.1' },
-	'vor-jitter' : { type : 'string',               default : '50' },
-	'vor-port'   : { type : 'string',  short : 'o', default : '3333' },
+	'no-gui'     : { type : 'boolean', short : 't' },
+
+	'ip'         : { type : 'string',  short : 'i'},
+	'vor-ip'     : { type : 'string',  short : 'o'},
+	'vor-port'   : { type : 'string',  short : 'p'},
+
+	'config'     : { type : 'string',  short : 'c'},
+	'write'      : { type : 'string',  short : 'w'},
 }
-/* eslint-enable sort-keys */
 
 const VALID_LISTEN = new Set([
 	'cue', 'dca1', 'dca2', 'dca3', 'dca4',
@@ -48,14 +46,14 @@ const options = prepArguments()
 const x32Pre = new osc_x32.x32PreProcessor(['show*', 'dca*', 'bus*'])
 
 const oscX32 = new osc.simpleOscLib({
-	strictMode : true,
+	strictMode   : true,
 	preprocessor : (msg) => x32Pre.readMessage(msg),
 })
 
 const X32_STATE   = new x32State(options, null)
 const thisWindow  = new winLib(X32_STATE, cursor)
 
-if ( ! options.noGUI ) {
+if ( ! options.textOnlyMode ) {
 	thisWindow.doSetupAndClear()
 	thisWindow.paint()
 
@@ -74,24 +72,24 @@ x32Socket.on('listening', () => {
 	const address = x32Socket.address()
 	X32_STATE.addMsg(`listening to X32 replies on ${address.address}:${address.port}`)
 })
-x32Socket.bind(options.port)
+x32Socket.bind(options.x32.port)
 
 sendToX32(X32_STATE.oscFullState())
 
 // Keeps the /xremote command alive every keepAlive
 setInterval(() => {
 	sendToX32(X32_STATE.oscXRemote())
-	X32_STATE.addMsg('pinging x32...', true)
-}, options.keepAlive)
+	X32_STATE.addMsg('pinging x32...', options.showMessages.pings)
+}, options.x32.keepAlive)
 
 // Refreshes the cue list and all data every keepAlive x 10
 setInterval(() => {
 	sendToX32(X32_STATE.oscFullState())
-	X32_STATE.addMsg('pinging x32 show data...', true)
-}, options.keepAlive * 10 )
+	X32_STATE.addMsg('pinging x32 show data...', options.showMessages.pings)
+}, options.x32.keepShowAlive )
 
 // Update VOR
-setInterval(sendToVor, options.vorFreq)
+setInterval(sendToVor, options.vor.frequency)
 
 
 /* -=-=-=-=-=-=-
@@ -102,7 +100,7 @@ Worker Functions
 function sendToX32(messageList) {
 	for ( const thisMessage of messageList ) {
 		const data = oscX32.buildMessage(thisMessage)
-		x32Socket.send(data, 0, data.length, options.port, options.ip)
+		x32Socket.send(data, 0, data.length, options.x32.port, options.x32.address)
 	}
 }
 
@@ -112,13 +110,13 @@ function sendToVor() {
 	if ( messageList.length !== 0 ) {
 		try {
 			const data = oscX32.buildBundle({
-				timetag  : oscX32.getTimeTagBufferFromDelta(options.vorJitter / 1000),
+				timetag  : oscX32.getTimeTagBufferFromDelta(options.vor.jitter / 1000),
 				elements : messageList,
 			})
 			X32_STATE.last_packet_size = data.length
-			vorSocket.send(data, 0, data.length, options.vorPort, options.vorIP)
+			vorSocket.send(data, 0, data.length, options.vor.port, options.vor.address)
 		} catch {
-			X32_STATE.addMsg('inconsistent data, Vor update not sent', false)
+			X32_STATE.addMsg('inconsistent data, vor update not sent')
 		}
 	}
 }
@@ -128,69 +126,139 @@ function processFromX32(msg, _rinfo) {
 	try {
 		try {
 			const oscMessage = oscX32.readMessage(msg)
-			if ( options.debug ) {
-				X32_STATE.addMsg(`${oscMessage.wasProcessed.toString().padEnd(6, ' ')}${oscX32.printableBuffer(msg)}`, true)
+			if ( options.showMessages.oscReceived ) {
+				X32_STATE.addMsg(`${oscMessage.wasProcessed.toString().padEnd(6, ' ')}${oscX32.printableBuffer(msg)}`)
 			}
 			try {
 				if ( ! oscMessage.wasProcessed ) { return }
 
 				X32_STATE.processState(oscMessage)
 			} catch (err) {
-				X32_STATE.addMsg(`bad OSC handling :: ${oscMessage} :: ${err}`)
+				X32_STATE.addMsg(`bad OSC handling :: ${oscMessage} :: ${err}`, options.showMessages.oscErrors)
 			}
 		} catch (err) {
-			X32_STATE.addMsg(`bad OSC decode :: ${oscX32.printableBuffer(msg)} :: ${err}`)
+			X32_STATE.addMsg(`bad OSC decode :: ${oscX32.printableBuffer(msg)} :: ${err}`, options.showMessages.oscErrors)
 		}
 	} catch (err) {
-		X32_STATE.addMsg(`invalid OSC packet :: ${err}`, false)
+		X32_STATE.addMsg(`invalid OSC packet :: ${err}`, options.showMessages.oscErrors)
 	}
+}
+
+function normalizeConfigFile(value) {
+	if ( typeof value === 'undefined' ) {
+		return null
+	}
+	
+	if ( /[/\\]/.test(value) ) {
+		return path.resolve(value)
+	}
+
+	return path.join(__dirname, value)
+}
+
+function argMerge(overrides) {
+	// only need 2 levels
+	const theseOptions = defaultSettings
+
+	for ( const [key, value] of Object.entries(overrides) ) {
+		if ( typeof value === 'object' ) {
+			for ( const [nestKey, nestValue] of Object.entries(value) ) {
+				theseOptions[key][nestKey] = nestValue
+			}
+		} else {
+			theseOptions[key] = value
+		}
+	}
+	return theseOptions
 }
 
 function prepArguments() {
-	const { values, positionals } = parseArgs({options : CLI_OPT_LIST, allowPositionals : true})
+	// step 1 : process CLI
+	// step 2 : load defaults
+	// step 3 : merge config (or default config)
+	// step 4 : merge CLI
+	// step 5 : validate
+	try {
+		const cliOpts = parseArgs({options : CLI_OPT_LIST})
 
-	if ( values.help ) { printUsage(); process.exit(0) }
-	if ( values.ip === '' && positionals.length !== 1 ) { printUsage(); printError('Listen IP Address Required'); process.exit(1) }
+		if ( cliOpts.values.help ) { exitUsage() }
 
-	const newOptions = {
-		debug     : values.debug,
-		ip        : values.ip === '' ? positionals[0] : values.ip,
-		keepAlive : parseInt(values.keepAlive),
-		noGUI     : values['no-gui'],
-		port      : parseInt(values.port),
-		verbose   : values.verbose,
-		vorFreq   : parseInt(values['vor-freq']),
-		vorIP     : values['vor-ip'],
-		vorJitter : parseInt(values['vor-jitter']),
-		vorPort   : parseInt(values['vor-port']),
-	}
+		const configFileIN   = normalizeConfigFile(cliOpts.values.config)
+		const configFileAUTO = normalizeConfigFile('x32_vor.config.json')
+		const configFileOUT  = normalizeConfigFile(cliOpts.values.write)
 
-	newOptions.listen = new Set(values.listen)
-
-	if ( newOptions.listen.has('dca') ) {
-		newOptions.listen.delete('dca')
-		for ( let i = 1; i <= 8; i++ ) { newOptions.listen.add(`dca${i}`) }
-	}
-
-	if ( newOptions.listen.has('bus') ) {
-		newOptions.listen.delete('bus')
-		for ( let i = 1; i <= 9; i++ ) { newOptions.listen.add(`bus0${i}`) }
-		for ( let i = 10; i <= 16; i++ ) { newOptions.listen.add(`bus${i}`) }
-	}
-
-	for ( const thisListenItem of newOptions.listen ) {
-		if ( ! VALID_LISTEN.has(thisListenItem) ) {
-			printUsage()
-			printError('Invalid listener specified')
-			process.exit(1)
+		let theseOptions = { ...defaultSettings }
+		
+		if ( configFileIN !== null ) {
+			if ( fs.existsSync(configFileIN) ) {
+				try {
+					const fileSettings = JSON.parse(fs.readFileSync(configFileIN))
+					theseOptions = argMerge(fileSettings)
+				} catch (err) {
+					exitError(`Unable to parse config file :: ${err}`)
+				}
+			} else {
+				exitError('Configuration file not found')
+			}
+		} else if ( fs.existsSync(configFileAUTO) ) {
+			try {
+				const fileSettings = JSON.parse(fs.readFileSync(configFileAUTO))
+				theseOptions = argMerge(fileSettings)
+			} catch (err) {
+				exitError(`Unable to parse config file :: ${err}`)
+			}
 		}
-	}
 
-	return newOptions
+		if ( cliOpts.values['no-gui'] === true ) { theseOptions.textOnlyMode = true }
+		if ( typeof cliOpts.values.ip !== 'undefined' ) { theseOptions.x32.address = cliOpts.values.ip }
+		if ( typeof cliOpts.values['vor-ip'] !== 'undefined' ) { theseOptions.vor.address = cliOpts.values['vor-ip'] }
+		if ( typeof cliOpts.values['vor-port'] !== 'undefined' ) { theseOptions.vor.port = cliOpts.values['vor-port'] }
+
+		const testOutputType = new Set(theseOptions.vor.output)
+
+		if ( testOutputType.has('dca') ) {
+			testOutputType.delete('dca')
+			for ( let i = 1; i <= 8; i++ ) { testOutputType.add(`dca${i}`) }
+		}
+
+		if ( testOutputType.has('bus') ) {
+			testOutputType.delete('bus')
+			for ( let i = 1; i <= 9; i++ ) { testOutputType.add(`bus0${i}`) }
+			for ( let i = 10; i <= 16; i++ ) { testOutputType.add(`bus${i}`) }
+		}
+
+		for ( const thisListenItem of testOutputType ) {
+			if ( ! VALID_LISTEN.has(thisListenItem) ) {
+				exitError('Invalid listener specified')
+			}
+		}
+
+		if ( theseOptions.x32.address === null ) {
+			exitError('At least the X32 IP Address is required')
+		}
+
+		if ( typeof cliOpts.values.write !== 'undefined' ) {
+			theseOptions.vor.output = [...testOutputType]
+			fs.writeFileSync(configFileOUT, JSON.stringify(theseOptions, null, 4))
+		}
+
+		theseOptions.vor.output = testOutputType
+
+		return theseOptions
+	} catch (err) {
+		exitError(err.message)
+	}
 }
 
-function printError(text) {
-	cursor.bold().red().write(`ERROR :: ${text}\n`).reset()
+function exitError(text) {
+	printUsage()
+	cursor.bold().red().write(`\nERROR :: ${text}\n`).reset()
+	process.exit(0)
+}
+
+function exitUsage() {
+	printUsage()
+	process.exit(0)
 }
 
 function printUsage() {
@@ -203,24 +271,18 @@ function printUsage() {
 		`${B}Make your X32 talk to Vor`, '',
 		'  X32/M32 Vor Adapter', '',
 		`${B}Synopsis`, '',
-		`  $ npm start [${B}--verbose${R}] ${U}x32_address`,
-		`  $ npm start [${B}--verbose${R}] ${B}--listen${R} cue ${B}-l${R} dca ${B}-l${R} bus ${B}--ip${R} ${U}x32_address`, '',
+		`  $ npm start ${B}--ip${R} ${U}x32_address`,
+		`  $ npm start ${B}--config${R} ${U}config.json`, '',
 		`${B}X32 Configuration`, '',
-		`  ${B}-i${R}, ${B}--ip${R} ${U}address${R}      IP Address of the X32`,
-		`  ${B}-p${R}, ${B}--port${R} ${U}port${R}       Port of the X32                      ${I}[10023]`, '',
+		`  ${B}-i${R}, ${B}--ip${R} ${U}address${R}           IP Address of the X32`, '',
 		`${B}Vor Configuration`, '',
-		`  ${B}-l${R}, ${B}--listen${R} ${U}item${R}    Updates to populate to Vor.           ${I}[cue, dca]`, '',
-		'                       Valid options:',
-		`                         ${I}cue, dca, dca[1-8], bus, bus[01-16]`, '',
-		`  ${B}--vor-ip${R} ${U}address${R}     IP to broadcast Vor packets to        ${I}[127.0.0.1]`,
-		`  ${B}-o${R}, ${B}--vor-port${R} ${U}port${R}  Port to broadcast Vor packets to      ${I}[3333]`,
-		`  ${B}--vor-freq${R} ${U}ms${R}        Vor update frequency in milliseconds  ${I}[100]`,
-		`  ${B}--vor-jitter${R} ${U}ms${R}      Vor jitter correction in milliseconds ${I}[50]`, '',
+		`  ${B}-o${R}, ${B}--vor-ip${R} ${U}address${R}       IP to broadcast Vor packets to    ${I}[127.0.0.1]`,
+		`  ${B}-p${R}, ${B}--vor-port${R} ${U}port${R}        Port to broadcast Vor packets to  ${I}[3333]`, '',
 		`${B}Options`, '',
-		`  ${B}-v${R}, ${B}--verbose${R}        Show extra debugging messages`,
-		`  ${B}-d${R}, ${B}--debug${R}          Show all incoming packets`,
-		`  ${B}--no-gui${R}             Do not use full screen ANSI interface`,
-		`  ${B}--help${R}               Print this usage guide`, '',
+		`  ${B}-c${R}, ${B}--config${R} ${U}config.json${R}   Configuration file to read`,
+		`  ${B}-w${R}, ${B}--write${R} ${U}config.json${R}    Configuration file to write`,
+		`  ${B}--no-gui${R}                   Do not use full screen ANSI interface`,
+		`  ${B}--help${R}                     Print this usage guide`, '',
 		`${I}(c)2024 J.T.Sage${R}  ${U}https://github.com/jtsage/X32_Vor`
 	]
 	for ( const thisLine of CLI_HELP ) {
