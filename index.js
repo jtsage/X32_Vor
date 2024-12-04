@@ -42,6 +42,7 @@ const VALID_LISTEN = new Set([
 ])
 
 const options = prepArguments()
+const x32MessageQueue = []
 
 const x32Pre = new osc_x32.x32PreProcessor(['show*', 'dca*', 'bus*'])
 
@@ -76,6 +77,10 @@ x32Socket.bind(options.x32.port)
 
 sendToX32(X32_STATE.oscFullState())
 
+setInterval(() => {
+	queueSendToX32()
+}, options.x32.queueInterval)
+
 // Keeps the /xremote command alive every keepAlive
 setInterval(() => {
 	sendToX32(X32_STATE.oscXRemote())
@@ -96,12 +101,20 @@ setInterval(sendToVor, options.vor.frequency)
 Worker Functions
 -=-=-=-=-=-=- */
 
-// Send a packet to the X32
+
+
+// queue a packet to the X32
 function sendToX32(messageList) {
-	for ( const thisMessage of messageList ) {
-		const data = oscX32.buildMessage(thisMessage)
-		x32Socket.send(data, 0, data.length, options.x32.port, options.x32.address)
-	}
+	x32MessageQueue.push(...messageList)
+}
+
+// process the X32 message queue
+function queueSendToX32() {
+	if ( x32MessageQueue.length === 0 ) { return }
+	const thisMessage = x32MessageQueue.shift()
+	const data = oscX32.buildMessage(thisMessage)
+	
+	x32Socket.send(data, 0, data.length, options.x32.port, options.x32.address)
 }
 
 // Send a packet to VOR
